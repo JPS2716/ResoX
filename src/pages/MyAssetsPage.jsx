@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDepartmentHead } from "../state/DepartmentHeadContext.jsx";
+import { useGlobal } from "../state/GlobalContext.jsx";
 import { useToast } from "../state/ToastContext.jsx";
 import { downloadCsv } from "../utils/csv.js";
 import { formatDate } from "../utils/format.js";
@@ -11,11 +11,25 @@ function computeAvailable(asset) {
 }
 
 export function MyAssetsPage() {
-  const { assets, assignments, categories, markAssignmentReturned } =
-    useDepartmentHead();
+  const { currentUser, staffInventory, allocations, markAllocationReturned } = useGlobal();
   const { pushToast } = useToast();
 
   const [category, setCategory] = useState("All");
+
+  const assets = useMemo(() => {
+    if (!currentUser) return [];
+    return staffInventory.filter((a) => a.department === currentUser.department);
+  }, [staffInventory, currentUser]);
+
+  const assignments = useMemo(() => {
+    if (!currentUser) return [];
+    return allocations.filter((a) => a.department === currentUser.department);
+  }, [allocations, currentUser]);
+
+  const categories = useMemo(() => {
+    const set = new Set(assets.map((a) => a.category));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [assets]);
 
   const filteredAssets = useMemo(() => {
     if (category === "All") return assets;
@@ -25,7 +39,7 @@ export function MyAssetsPage() {
   const filteredAssignments = useMemo(() => {
     if (category === "All") return assignments;
     const allowed = new Set(
-      assets.filter((a) => a.category === category).map((a) => a.name)
+      assets.filter((a) => a.category === category).map((a) => a.assetName)
     );
     return assignments.filter((a) => allowed.has(a.assetName));
   }, [assignments, assets, category]);
@@ -35,17 +49,16 @@ export function MyAssetsPage() {
     rows.push(["Assets I Own"]);
     rows.push(["Asset Name", "Category", "Total Qty", "In Use", "Available"]);
     filteredAssets.forEach((a) => {
-      rows.push([a.name, a.category, a.totalQty, a.inUse, computeAvailable(a)]);
+      rows.push([a.assetName, a.category, a.totalQty, a.inUse, computeAvailable(a)]);
     });
     rows.push([]);
     rows.push(["Who I've Assigned To"]);
-    rows.push(["Asset Name", "Assigned To", "Role", "Date Assigned", "Return Date", "Status"]);
+    rows.push(["Asset Name", "Assigned To", "Date Assigned", "Return Date", "Status"]);
     filteredAssignments.forEach((a) => {
       rows.push([
         a.assetName,
-        a.assignedTo,
-        a.role,
-        formatDate(a.dateAssigned),
+        a.userName,
+        formatDate(a.dateAllocated),
         formatDate(a.returnDate),
         a.status,
       ]);
@@ -56,7 +69,7 @@ export function MyAssetsPage() {
   }
 
   function onReturn(id) {
-    const res = markAssignmentReturned(id);
+    const res = markAllocationReturned(id);
     if (!res.ok) {
       pushToast({ title: "Error", message: res.error || "Unable to mark returned" });
       return;
@@ -109,8 +122,8 @@ export function MyAssetsPage() {
           </thead>
           <tbody>
             {filteredAssets.map((a) => (
-              <tr key={a.name}>
-                <td>{a.name}</td>
+              <tr key={a.id}>
+                <td>{a.assetName}</td>
                 <td>{a.category}</td>
                 <td>{a.totalQty}</td>
                 <td>{a.inUse}</td>
@@ -133,7 +146,6 @@ export function MyAssetsPage() {
             <tr>
               <th>Asset Name</th>
               <th>Assigned To</th>
-              <th>Role</th>
               <th>Date Assigned</th>
               <th>Return Date</th>
               <th>Status</th>
@@ -144,9 +156,8 @@ export function MyAssetsPage() {
             {filteredAssignments.map((a) => (
               <tr key={a.id}>
                 <td>{a.assetName}</td>
-                <td>{a.assignedTo}</td>
-                <td>{a.role}</td>
-                <td>{formatDate(a.dateAssigned)}</td>
+                <td>{a.userName}</td>
+                <td>{formatDate(a.dateAllocated)}</td>
                 <td>{formatDate(a.returnDate)}</td>
                 <td>
                   <StatusPill status={a.status} />
